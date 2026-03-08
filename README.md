@@ -36,3 +36,7 @@ If you find this repository useful, please use the following BibTeX entry for ci
       url={https://arxiv.org/abs/2601.01024}, 
 }
 ```
+
+## License
+
+This project is released under the MIT license. 
