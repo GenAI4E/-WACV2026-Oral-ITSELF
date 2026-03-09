@@ -110,13 +110,13 @@ class ITSELF(nn.Module):
 
     def encode_image_grab(self, image):
         x,atten_i = self.base_model.encode_image(image)
-        i_tse_f = self.visul_emb_layer(x, atten_i)
-        return i_tse_f.float()
+        i_grab_f = self.visul_emb_layer(x, atten_i)
+        return i_grab_f.float()
 
     def encode_text_grab(self, text):
         x,atten_t = self.base_model.encode_text(text.long())
-        t_tse_f = self.texual_emb_layer(x, text, atten_t)
-        return t_tse_f.float()
+        t_grab_f = self.texual_emb_layer(x, text, atten_t)
+        return t_grab_f.float()
     
     def rollout(self, attentions: torch.Tensor, 
                 head_fusion = 'mean', 
@@ -253,16 +253,16 @@ class ITSELF(nn.Module):
             z_feats2 = torch.cat([nt_feats.float(), ni_feats.float()], dim=1)
             z_feats1 = self.mlp_bge(z_feats1.float())
             z_feats2 = self.mlp_bge(z_feats2.float())
-            cross_modal_logits1 = self.classifier_bge(z_feats1.float())
-            cross_modal_logits2 = self.classifier_bge(z_feats2.float())
+            cross_modal_logits1 = self.classifier_global(z_feats1.float())
+            cross_modal_logits2 = self.classifier_global(z_feats2.float())
             device = cross_modal_logits1.device 
             nlabels = nlabels.to(device) 
             closs1 =  objectives.compute_cid(cross_modal_logits1, cross_modal_logits2,nlabels)
-            image_logits = self.classifier_id_bge(i_feats.half()).float()
-            text_logits = self.classifier_id_bge(t_feats.half()).float()
+            image_logits = self.classifier_id_global(i_feats.half()).float()
+            text_logits = self.classifier_id_global(t_feats.half()).float()
             closs3 = objectives.compute_id(image_logits, batch['pids']) + objectives.compute_id(text_logits, batch['pids'])
             
-            if not self.args.only_bge:
+            if not self.args.only_global:
                 S_ = objectives.cosine_similarity_matrix(i_grab_f, t_grab_f)
                 hard_negatives_ = objectives.sample_hard_negatives(S_, batch['pids'])
                 M_ = batch['pids'].max().item()
@@ -272,31 +272,32 @@ class ITSELF(nn.Module):
                 ni_feats_, nt_feats_, nlabels_ = all_pairs_
                 z_feats1_ = torch.cat([ni_feats_.float(), nt_feats_.float()], dim=1)
                 z_feats2_ = torch.cat([nt_feats_.float(), ni_feats_.float()], dim=1)
-                z_feats1_ = self.mlp_tse(z_feats1_.float())
-                z_feats2_ = self.mlp_tse(z_feats2_.float())
-                cross_modal_logits1_ = self.classifier_tse(z_feats1_.float())
-                cross_modal_logits2_ = self.classifier_tse(z_feats2_.float())
+                z_feats1_ = self.mlp_grab(z_feats1_.float())
+                z_feats2_ = self.mlp_grab(z_feats2_.float())
+                cross_modal_logits1_ = self.classifier_grab(z_feats1_.float())
+                cross_modal_logits2_ = self.classifier_grab(z_feats2_.float())
                 device_ = cross_modal_logits1_.device
                 nlabels_ = nlabels_.to(device)
                 closs2 =  objectives.compute_cid(cross_modal_logits1_, cross_modal_logits2_,nlabels_)
-                image_logits_ = self.classifier_id_tse(i_grab_f.half()).float()
-                text_logits_ = self.classifier_id_tse(t_grab_f.half()).float()
+                image_logits_ = self.classifier_id_grab(i_grab_f.half()).float()
+                text_logits_ = self.classifier_id_grab(t_grab_f.half()).float()
                 closs4 = objectives.compute_id(image_logits_, batch['pids']) + objectives.compute_id(text_logits_, batch['pids'])
                 ret.update({'cid_loss': closs1+closs2+closs3+closs4})
             else:
                 ret.update({'cid_loss': closs1+closs3})
 
         if 'tal' in self.current_task:
-            TAL_bge_loss = objectives.compute_TAL(i_feats, t_feats,batch['pids'],margin=self.args.margin,tau=self.args.tau)
+            TAL_global_loss = objectives.compute_TAL(i_feats, t_feats,batch['pids'],margin=self.args.margin,tau=self.args.tau)
             if not self.args.only_bge:
-                TAL_tse_loss = objectives.compute_TAL(i_grab_f, t_grab_f,batch['pids'],margin=self.args.margin,tau=self.args.tau)
-                ret.update({'tal_loss': TAL_bge_loss + TAL_tse_loss}) 
+                TAL_grab_loss = objectives.compute_TAL(i_grab_f, t_grab_f,batch['pids'],margin=self.args.margin,tau=self.args.tau)
+                ret.update({'tal_loss': TAL_global_loss + TAL_grab_loss}) 
             else:
-                ret.update({'tal_loss': TAL_bge_loss})
+                ret.update({'tal_loss': TAL_global_loss})
 
         return ret
 
 def build_model(args, num_classes=11003):
     model = ITSELF(args, num_classes)
     convert_weights(model)
+
     return model
